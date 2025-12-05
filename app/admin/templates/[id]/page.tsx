@@ -3,11 +3,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTemplateStore } from '@/lib/template-store';
-import { SectionType, AnimationType, TemplateElement, TextStyle } from '@/lib/types';
+import { SectionType, AnimationType, TemplateElement, TextStyle, ElementType, CountdownConfig, RSVPFormConfig, GuestWishesConfig, IconStyle } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Card } from '@/components/ui/Card';
+import { DynamicIcon, ICON_CATEGORIES, ALL_ICONS } from '@/components/icons/IconList';
+import { CountdownTimer, getDefaultCountdownConfig } from '@/components/CountdownTimer';
+import { RSVPForm, getDefaultRSVPFormConfig } from '@/components/RSVPForm';
+import { GuestWishes, getDefaultGuestWishesConfig } from '@/components/GuestWishes';
 import {
     ArrowLeft, Save, Play, Image as ImageIcon, Type, Trash2, Upload,
     Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
@@ -15,7 +19,8 @@ import {
     AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
     AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd,
     Move, GripVertical, Copy, Eye, EyeOff, MoreHorizontal, ExternalLink,
-    FlipHorizontal, FlipVertical, RotateCw, Maximize, Minimize, X
+    FlipHorizontal, FlipVertical, RotateCw, Maximize, Minimize, X,
+    Heart, Clock, MessageSquare, Users, Plus, Palette, Settings
 } from 'lucide-react';
 
 const SECTION_TYPES: SectionType[] = ['opening', 'quotes', 'couple', 'event', 'maps', 'rsvp', 'thanks'];
@@ -24,8 +29,20 @@ const ANIMATION_TYPES: AnimationType[] = [
     'zoom-in', 'zoom-out', 'flip-x', 'flip-y', 'bounce'
 ];
 const FONT_FAMILIES = [
-    'Inter', 'Roboto', 'Playfair Display', 'Cormorant Garamond',
-    'Montserrat', 'Poppins', 'Lora', 'Dancing Script', 'Great Vibes', 'Satisfy'
+    // Sans-serif
+    'Inter', 'Roboto', 'Montserrat', 'Poppins', 'Open Sans',
+    // Serif
+    'Playfair Display', 'Cormorant Garamond', 'Lora', 'Merriweather', 'Libre Baskerville',
+    // Cursive - Tegak Bersambung
+    'Dancing Script', 'Great Vibes', 'Satisfy', 'Pacifico', 'Caveat',
+    'Sacramento', 'Allura', 'Italianno', 'Tangerine', 'Pinyon Script',
+    'Rouge Script', 'Mr De Haviland', 'Marck Script', 'Cookie', 'Yellowtail',
+    // Handwriting
+    'Kalam', 'Indie Flower', 'Shadows Into Light', 'Amatic SC', 'Patrick Hand',
+    'Gloria Hallelujah', 'Covered By Your Grace', 'Rock Salt', 'Permanent Marker',
+    // Decorative Script
+    'Alex Brush', 'Qwigley', 'Clicker Script', 'Meddon', 'Euphoria Script',
+    'Petit Formal Script', 'Niconne', 'Croissant One', 'Yesteryear', 'Lavishly Yours'
 ];
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72];
 
@@ -53,9 +70,17 @@ export default function TemplateEditorPage() {
     const reorderSections = useTemplateStore((state) => state.reorderSections);
     const selectedElementId = useTemplateStore((state) => state.selectedElementId);
     const setSelectedElement = useTemplateStore((state) => state.setSelectedElement);
+    const copyElement = useTemplateStore((state) => state.copyElement);
+    const pasteElement = useTemplateStore((state) => state.pasteElement);
+    const fetchTemplates = useTemplateStore((state) => state.fetchTemplates);
 
     const template = templates.find((t) => t.id === templateId);
     const orderedSections = template?.sectionOrder || SECTION_TYPES;
+
+    // Fetch templates on mount
+    useEffect(() => {
+        fetchTemplates();
+    }, [fetchTemplates]);
 
     const moveSectionUp = (index: number) => {
         if (index <= 0) return;
@@ -89,6 +114,38 @@ export default function TemplateEditorPage() {
         }
     }, [template]);
 
+    // Keyboard shortcuts for copy/paste/delete
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Check if user is typing in an input or textarea
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+                return;
+            }
+
+            // Ctrl+C: Copy selected element
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedElementId) {
+                e.preventDefault();
+                copyElement(templateId, activeSection, selectedElementId);
+            }
+
+            // Ctrl+V: Paste element
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                e.preventDefault();
+                pasteElement(templateId, activeSection);
+            }
+
+            // Delete or Backspace: Delete selected element
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
+                e.preventDefault();
+                deleteElement(templateId, activeSection, selectedElementId);
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [selectedElementId, templateId, activeSection, copyElement, pasteElement, deleteElement]);
+
     if (!template) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -106,29 +163,91 @@ export default function TemplateEditorPage() {
         updateSectionDesign(templateId, activeSection, { [key]: value });
     };
 
-    const handleAddElement = (type: 'image' | 'text') => {
+    const handleAddElement = (type: ElementType) => {
         const maxZ = elements.length > 0 ? Math.max(...elements.map((el) => el.zIndex)) : 0;
-        const newElement: TemplateElement = {
+
+        // Base element properties
+        const baseElement: Partial<TemplateElement> = {
             id: `el-${Date.now()}`,
             type,
-            name: type === 'image' ? 'New Image' : 'New Text',
-            position: { x: (CANVAS_WIDTH - (type === 'image' ? 200 : 280)) / 2, y: 100 },
-            size: { width: type === 'image' ? 200 : 280, height: type === 'image' ? 150 : 50 },
             animation: 'fade-in',
             zIndex: maxZ + 1,
-            ...(type === 'image' ? { imageUrl: '' } : {
-                content: 'Enter your text here',
-                textStyle: {
-                    fontFamily: 'Inter',
-                    fontSize: 18,
-                    fontWeight: 'normal',
-                    fontStyle: 'normal',
-                    textDecoration: 'none',
-                    textAlign: 'center',
-                    color: '#000000',
-                },
-            }),
         };
+
+        let newElement: TemplateElement;
+
+        switch (type) {
+            case 'image':
+                newElement = {
+                    ...baseElement,
+                    name: 'New Image',
+                    position: { x: (CANVAS_WIDTH - 200) / 2, y: 100 },
+                    size: { width: 200, height: 150 },
+                    imageUrl: '',
+                } as TemplateElement;
+                break;
+            case 'text':
+                newElement = {
+                    ...baseElement,
+                    name: 'New Text',
+                    position: { x: (CANVAS_WIDTH - 280) / 2, y: 100 },
+                    size: { width: 280, height: 50 },
+                    content: 'Enter your text here',
+                    textStyle: {
+                        fontFamily: 'Inter',
+                        fontSize: 18,
+                        fontWeight: 'normal',
+                        fontStyle: 'normal',
+                        textDecoration: 'none',
+                        textAlign: 'center',
+                        color: '#000000',
+                    },
+                } as TemplateElement;
+                break;
+            case 'icon':
+                newElement = {
+                    ...baseElement,
+                    name: 'New Icon',
+                    position: { x: (CANVAS_WIDTH - 60) / 2, y: 100 },
+                    size: { width: 60, height: 60 },
+                    iconStyle: {
+                        iconName: 'Heart',
+                        iconColor: '#b8860b',
+                        iconSize: 48,
+                    },
+                } as TemplateElement;
+                break;
+            case 'countdown':
+                newElement = {
+                    ...baseElement,
+                    name: 'Countdown Timer',
+                    position: { x: (CANVAS_WIDTH - 340) / 2, y: 100 },
+                    size: { width: 340, height: 100 },
+                    countdownConfig: getDefaultCountdownConfig(),
+                } as TemplateElement;
+                break;
+            case 'rsvp_form':
+                newElement = {
+                    ...baseElement,
+                    name: 'RSVP Form',
+                    position: { x: (CANVAS_WIDTH - 320) / 2, y: 50 },
+                    size: { width: 320, height: 450 },
+                    rsvpFormConfig: getDefaultRSVPFormConfig(),
+                } as TemplateElement;
+                break;
+            case 'guest_wishes':
+                newElement = {
+                    ...baseElement,
+                    name: 'Guest Wishes',
+                    position: { x: (CANVAS_WIDTH - 340) / 2, y: 50 },
+                    size: { width: 340, height: 400 },
+                    guestWishesConfig: getDefaultGuestWishesConfig(),
+                } as TemplateElement;
+                break;
+            default:
+                return;
+        }
+
         addElement(templateId, activeSection, newElement);
         setSelectedElement(newElement.id);
     };
@@ -478,9 +597,41 @@ export default function TemplateEditorPage() {
     };
 
     const closePreview = () => {
+        // Exit native fullscreen if active
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        }
         setIsPreviewMode(false);
         setIsFullscreen(false);
     };
+
+    // Toggle native fullscreen
+    const toggleNativeFullscreen = async () => {
+        if (!isFullscreen) {
+            try {
+                await document.documentElement.requestFullscreen();
+                setIsFullscreen(true);
+            } catch (err) {
+                console.error('Fullscreen not supported:', err);
+            }
+        } else {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+            }
+            setIsFullscreen(false);
+        }
+    };
+
+    // Listen for fullscreen change events
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                setIsFullscreen(false);
+            }
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
 
     // Toggle visibility for a section
     const toggleSectionVisibility = (sectionType: SectionType) => {
@@ -529,50 +680,71 @@ export default function TemplateEditorPage() {
         if (!isPreviewMode) return null;
 
         return (
-            <div className={`fixed inset-0 z-50 ${isFullscreen ? 'bg-black' : 'bg-black/90'} flex flex-col`}>
-                {/* Preview Header */}
-                <div className={`flex justify-between items-center p-4 ${isFullscreen ? 'absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/50 to-transparent' : 'bg-slate-900'}`}>
-                    <h2 className="text-white text-lg font-semibold">Preview Mode</h2>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={() => setIsFullscreen(!isFullscreen)}
-                            className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
-                            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-                        >
-                            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-                        </button>
-                        <button
-                            onClick={closePreview}
-                            className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
-                            title="Close Preview"
-                        >
-                            <X size={20} />
-                        </button>
+            <div className={`fixed inset-0 z-50 bg-black flex flex-col`}>
+                {/* Preview Header - Hidden when fullscreen */}
+                {!isFullscreen && (
+                    <div className="flex justify-between items-center p-4 bg-slate-900 shrink-0">
+                        <h2 className="text-white text-lg font-semibold">Preview Mode</h2>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={toggleNativeFullscreen}
+                                className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                                title="Fullscreen"
+                            >
+                                <Maximize size={20} />
+                            </button>
+                            <button
+                                onClick={closePreview}
+                                className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                                title="Close Preview"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
                     </div>
-                </div>
+                )}
 
-                {/* Preview Content */}
-                <div className={`flex-1 overflow-auto flex ${isFullscreen ? 'flex-col' : 'flex-col items-center py-8 gap-8'}`}>
+                {/* Fullscreen controls overlay */}
+                {isFullscreen && (
+                    <div className="absolute top-0 left-0 right-0 z-50 p-4 opacity-0 hover:opacity-100 transition-opacity duration-300">
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={toggleNativeFullscreen}
+                                className="p-2 text-white bg-black/50 hover:bg-white/20 rounded-lg transition-colors"
+                                title="Exit Fullscreen"
+                            >
+                                <Minimize size={20} />
+                            </button>
+                            <button
+                                onClick={closePreview}
+                                className="p-2 text-white bg-black/50 hover:bg-white/20 rounded-lg transition-colors"
+                                title="Close Preview"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Preview Content - Sections at SAME size, no gaps, centered */}
+                <div className="flex-1 overflow-auto flex flex-col items-center justify-start">
                     {orderedSections.map((sectionType) => {
                         const sectionDesign = template.sections[sectionType] || { animation: 'none' as const, elements: [] };
                         const sectionElements = sectionDesign.elements || [];
                         const sortedSectionElements = [...sectionElements].sort((a, b) => a.zIndex - b.zIndex);
                         const isVisible = sectionDesign.isVisible !== false;
+                        const isSectionVisibleInViewport = visibleSections.has(sectionType);
 
                         if (!isVisible) return null;
-
-                        const isFirstSection = orderedSections.indexOf(sectionType) === 0;
-                        const fullscreenWidth = 500;
-                        const fullscreenHeight = isFirstSection ? 950 : 680;
 
                         return (
                             <div
                                 key={sectionType}
-                                className={`relative ${isFullscreen ? 'mx-auto' : 'shrink-0 shadow-2xl'}`}
+                                data-section-id={sectionType}
+                                className="relative shrink-0"
                                 style={{
-                                    width: isFullscreen ? fullscreenWidth : CANVAS_WIDTH,
-                                    height: isFullscreen ? fullscreenHeight : CANVAS_HEIGHT,
-                                    minHeight: isFullscreen ? fullscreenHeight : CANVAS_HEIGHT,
+                                    width: CANVAS_WIDTH,
+                                    height: CANVAS_HEIGHT,
                                 }}
                             >
                                 {/* Canvas Background */}
@@ -596,12 +768,12 @@ export default function TemplateEditorPage() {
                                             key={el.id}
                                             className="absolute"
                                             style={{
-                                                left: isFullscreen ? (el.position.x / CANVAS_WIDTH) * fullscreenWidth : el.position.x,
-                                                top: isFullscreen ? (el.position.y / CANVAS_HEIGHT) * fullscreenHeight : el.position.y,
-                                                width: isFullscreen ? (el.size.width / CANVAS_WIDTH) * fullscreenWidth : el.size.width,
-                                                height: isFullscreen ? (el.size.height / CANVAS_HEIGHT) * fullscreenHeight : el.size.height,
+                                                left: el.position.x,
+                                                top: el.position.y,
+                                                width: el.size.width,
+                                                height: el.size.height,
                                                 zIndex: el.zIndex,
-                                                ...getAnimationStyle(el, true),
+                                                ...getAnimationStyle(el, true, isSectionVisibleInViewport),
                                             }}
                                         >
                                             {/* Inner wrapper for user transforms (flip/rotation) */}
@@ -610,14 +782,19 @@ export default function TemplateEditorPage() {
                                                 style={{ transform: getElementTransform(el) }}
                                             >
                                                 {el.type === 'image' && el.imageUrl && (
-                                                    <img src={el.imageUrl} alt={el.name} className="w-full h-full object-cover" />
+                                                    <img
+                                                        src={el.imageUrl}
+                                                        alt={el.name}
+                                                        className="w-full h-full object-cover"
+                                                        style={{ imageRendering: 'high-quality' }}
+                                                    />
                                                 )}
                                                 {el.type === 'text' && el.textStyle && (
                                                     <div
                                                         className="w-full h-full flex items-center"
                                                         style={{
                                                             fontFamily: el.textStyle.fontFamily,
-                                                            fontSize: isFullscreen ? (el.textStyle.fontSize / CANVAS_WIDTH) * fullscreenWidth : el.textStyle.fontSize,
+                                                            fontSize: el.textStyle.fontSize,
                                                             fontWeight: el.textStyle.fontWeight,
                                                             fontStyle: el.textStyle.fontStyle,
                                                             textDecoration: el.textStyle.textDecoration,
@@ -629,6 +806,30 @@ export default function TemplateEditorPage() {
                                                         }}
                                                     >
                                                         {el.content}
+                                                    </div>
+                                                )}
+                                                {el.type === 'icon' && el.iconStyle && (
+                                                    <div className="w-full h-full flex items-center justify-center">
+                                                        <DynamicIcon
+                                                            name={el.iconStyle.iconName}
+                                                            size={el.iconStyle.iconSize}
+                                                            color={el.iconStyle.iconColor}
+                                                        />
+                                                    </div>
+                                                )}
+                                                {el.type === 'countdown' && el.countdownConfig && (
+                                                    <div className="w-full h-full flex items-center justify-center overflow-hidden" style={{ transform: 'scale(0.85)' }}>
+                                                        <CountdownTimer config={el.countdownConfig} />
+                                                    </div>
+                                                )}
+                                                {el.type === 'rsvp_form' && el.rsvpFormConfig && (
+                                                    <div className="w-full h-full overflow-hidden" style={{ transform: 'scale(0.9)', transformOrigin: 'top center' }}>
+                                                        <RSVPForm config={el.rsvpFormConfig} templateId={templateId} />
+                                                    </div>
+                                                )}
+                                                {el.type === 'guest_wishes' && el.guestWishesConfig && (
+                                                    <div className="w-full h-full overflow-hidden" style={{ transform: 'scale(0.9)', transformOrigin: 'top center' }}>
+                                                        <GuestWishes config={el.guestWishesConfig} wishes={[]} />
                                                     </div>
                                                 )}
                                             </div>
@@ -765,71 +966,88 @@ export default function TemplateEditorPage() {
                                         </div>
                                     </div>
 
-                                    {/* Page Preview Card - Click to activate */}
+                                    {/* Simplified Page Row - No Preview (matching Image 1) */}
                                     <div
                                         onClick={() => { setActiveSection(sectionType); setSelectedElement(null); }}
-                                        className={`relative cursor-pointer rounded-lg overflow-hidden transition-all duration-200 ${activeSection === sectionType
-                                            ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-800'
-                                            : 'hover:ring-2 hover:ring-slate-600'
+                                        className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all ${activeSection === sectionType
+                                            ? 'bg-blue-600/20 border border-blue-500'
+                                            : 'bg-slate-700/30 hover:bg-slate-700/50 border border-transparent'
                                             } ${!isVisible ? 'opacity-50' : ''}`}
-                                        style={{ aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}` }}
                                     >
-                                        <div
-                                            className="absolute inset-0 bg-white"
-                                            style={{
-                                                backgroundColor: sectionDesign?.backgroundColor || '#ffffff',
-                                                backgroundImage: sectionDesign?.backgroundUrl ? `url(${sectionDesign.backgroundUrl})` : undefined,
-                                                backgroundSize: 'cover',
-                                                backgroundPosition: 'center',
-                                            }}
-                                        >
-                                            {/* Mini preview of elements - scaled down */}
-                                            <div className="absolute inset-0 overflow-hidden" style={{ transform: 'scale(0.28)', transformOrigin: 'top left' }}>
-                                                {(sectionDesign?.elements || []).map((el) => (
-                                                    <div
-                                                        key={el.id}
-                                                        className="absolute"
-                                                        style={{
-                                                            left: el.position.x,
-                                                            top: el.position.y,
-                                                            width: el.size.width,
-                                                            height: el.size.height,
-                                                            zIndex: el.zIndex,
-                                                        }}
-                                                    >
-                                                        {el.type === 'image' && el.imageUrl && (
-                                                            <img src={el.imageUrl} alt="" className="w-full h-full object-cover" />
-                                                        )}
-                                                        {el.type === 'image' && !el.imageUrl && (
-                                                            <div className="w-full h-full bg-slate-300" />
-                                                        )}
-                                                        {el.type === 'text' && (
-                                                            <div
-                                                                style={{
-                                                                    fontFamily: el.textStyle?.fontFamily,
-                                                                    fontSize: el.textStyle?.fontSize,
-                                                                    fontWeight: el.textStyle?.fontWeight,
-                                                                    color: el.textStyle?.color,
-                                                                }}
-                                                            >
-                                                                {el.content}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Active indicator */}
+                                        <span className="text-sm text-white truncate">{pageTitle}</span>
                                         {activeSection === sectionType && (
-                                            <div className="absolute bottom-2 right-2 bg-blue-500 text-white text-xs px-2 py-0.5 rounded">
-                                                Editing
-                                            </div>
+                                            <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded">Editing</span>
                                         )}
                                     </div>
                                 </div>
                             );
                         })}
+
+                        {/* Add Custom Page Button */}
+                        <div className="mt-4 pt-4 border-t border-slate-700">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-slate-300 border-slate-600 border-dashed hover:border-blue-500 hover:text-blue-400"
+                                onClick={() => {
+                                    const pageName = prompt('Masukkan nama halaman baru:');
+                                    if (!pageName || !pageName.trim()) return;
+
+                                    // Generate unique section ID
+                                    const sectionId = `custom_${Date.now()}`;
+                                    const newOrder = [...orderedSections, sectionId];
+                                    reorderSections(templateId, newOrder as SectionType[]);
+                                    updateSectionDesign(templateId, sectionId as SectionType, {
+                                        animation: 'fade-in',
+                                        elements: [],
+                                        isVisible: true,
+                                        pageTitle: pageName.trim()
+                                    });
+                                    setActiveSection(sectionId as SectionType);
+                                }}
+                            >
+                                <Plus size={14} className="mr-1" /> Tambah Halaman Baru
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Admin Thumbnail Section */}
+                    <div className="p-3 border-t border-slate-700">
+                        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                            Admin - Thumbnail
+                        </h2>
+                        <div className="relative rounded-lg overflow-hidden bg-slate-700 aspect-[4/3]">
+                            {template.thumbnail ? (
+                                <img
+                                    src={template.thumbnail}
+                                    alt="Thumbnail"
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-500">
+                                    <ImageIcon size={24} />
+                                </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="text-xs"
+                                    onClick={() => {
+                                        const url = prompt('Masukkan URL thumbnail:', template.thumbnail || '');
+                                        if (url !== null) {
+                                            updateTemplate(templateId, { thumbnail: url });
+                                        }
+                                    }}
+                                >
+                                    <Upload size={12} className="mr-1" />
+                                    Ubah Thumbnail
+                                </Button>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 text-center">
+                            Thumbnail hanya terlihat oleh admin
+                        </p>
                     </div>
                 </aside>
 
@@ -857,12 +1075,24 @@ export default function TemplateEditorPage() {
                                 {/* Add Element */}
                                 <div className="mb-4">
                                     <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Add Element</h3>
-                                    <div className="flex gap-2">
-                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('image')} className="flex-1 text-slate-300 border-slate-600 text-xs py-2">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('image')} className="text-slate-300 border-slate-600 text-xs py-2">
                                             <ImageIcon size={14} className="mr-1" /> Image
                                         </Button>
-                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('text')} className="flex-1 text-slate-300 border-slate-600 text-xs py-2">
+                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('text')} className="text-slate-300 border-slate-600 text-xs py-2">
                                             <Type size={14} className="mr-1" /> Text
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('icon')} className="text-slate-300 border-slate-600 text-xs py-2">
+                                            <Heart size={14} className="mr-1" /> Icon
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('countdown')} className="text-slate-300 border-slate-600 text-xs py-2">
+                                            <Clock size={14} className="mr-1" /> Countdown
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('rsvp_form')} className="text-slate-300 border-slate-600 text-xs py-2">
+                                            <MessageSquare size={14} className="mr-1" /> RSVP Form
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={() => handleAddElement('guest_wishes')} className="text-slate-300 border-slate-600 text-xs py-2">
+                                            <Users size={14} className="mr-1" /> Wishes
                                         </Button>
                                     </div>
                                 </div>
@@ -880,7 +1110,12 @@ export default function TemplateEditorPage() {
                                                     }`}
                                             >
                                                 <span className="flex items-center gap-2 truncate">
-                                                    {el.type === 'image' ? <ImageIcon size={14} /> : <Type size={14} />}
+                                                    {el.type === 'image' && <ImageIcon size={14} />}
+                                                    {el.type === 'text' && <Type size={14} />}
+                                                    {el.type === 'icon' && <Heart size={14} />}
+                                                    {el.type === 'countdown' && <Clock size={14} />}
+                                                    {el.type === 'rsvp_form' && <MessageSquare size={14} />}
+                                                    {el.type === 'guest_wishes' && <Users size={14} />}
                                                     <span className="truncate">{el.name}</span>
                                                 </span>
                                                 <button
@@ -1090,8 +1325,8 @@ export default function TemplateEditorPage() {
 
                                                 <div className="mb-3">
                                                     <Label className="text-slate-300 text-xs">Font</Label>
-                                                    <select value={selectedElement.textStyle.fontFamily} onChange={(e) => handleTextStyleChange('fontFamily', e.target.value)} className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8">
-                                                        {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
+                                                    <select value={selectedElement.textStyle.fontFamily} onChange={(e) => handleTextStyleChange('fontFamily', e.target.value)} className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-10">
+                                                        {FONT_FAMILIES.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
                                                     </select>
                                                 </div>
 
@@ -1121,6 +1356,278 @@ export default function TemplateEditorPage() {
                                                     </div>
                                                 </div>
                                             </>
+                                        )}
+
+                                        {/* Icon Settings */}
+                                        {selectedElement.type === 'icon' && selectedElement.iconStyle && (
+                                            <div className="border-t border-slate-700 pt-3">
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase mb-2">Icon Settings</h4>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Icon</Label>
+                                                    <select
+                                                        value={selectedElement.iconStyle.iconName}
+                                                        onChange={(e) => handleElementChange('iconStyle', { ...selectedElement.iconStyle, iconName: e.target.value })}
+                                                        className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-10"
+                                                    >
+                                                        {Object.entries(ICON_CATEGORIES).map(([category, icons]) => (
+                                                            <optgroup key={category} label={category}>
+                                                                {icons.map((icon) => (
+                                                                    <option key={icon} value={icon}>{icon}</option>
+                                                                ))}
+                                                            </optgroup>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Size</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="12"
+                                                        max="200"
+                                                        value={selectedElement.iconStyle.iconSize}
+                                                        onChange={(e) => handleElementChange('iconStyle', { ...selectedElement.iconStyle, iconSize: parseInt(e.target.value) || 48 })}
+                                                        className="mt-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                    />
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Color</Label>
+                                                    <div className="flex gap-2 mt-1">
+                                                        <input
+                                                            type="color"
+                                                            value={selectedElement.iconStyle.iconColor}
+                                                            onChange={(e) => handleElementChange('iconStyle', { ...selectedElement.iconStyle, iconColor: e.target.value })}
+                                                            className="w-8 h-8 rounded cursor-pointer border-0"
+                                                        />
+                                                        <Input
+                                                            value={selectedElement.iconStyle.iconColor}
+                                                            onChange={(e) => handleElementChange('iconStyle', { ...selectedElement.iconStyle, iconColor: e.target.value })}
+                                                            className="flex-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Countdown Settings */}
+                                        {selectedElement.type === 'countdown' && selectedElement.countdownConfig && (
+                                            <div className="border-t border-slate-700 pt-3">
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase mb-2">Countdown Settings</h4>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Target Date</Label>
+                                                    <Input
+                                                        type="datetime-local"
+                                                        value={selectedElement.countdownConfig.targetDate.slice(0, 16)}
+                                                        onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, targetDate: new Date(e.target.value).toISOString() })}
+                                                        className="mt-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                    />
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Style</Label>
+                                                    <select
+                                                        value={selectedElement.countdownConfig.style}
+                                                        onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, style: e.target.value })}
+                                                        className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                    >
+                                                        <option value="elegant">Elegant</option>
+                                                        <option value="minimal">Minimal</option>
+                                                        <option value="flip">Flip</option>
+                                                        <option value="circle">Circle</option>
+                                                        <option value="card">Card</option>
+                                                        <option value="neon">Neon</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="mb-3 grid grid-cols-2 gap-2">
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.countdownConfig.showDays}
+                                                            onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, showDays: e.target.checked })}
+                                                        />
+                                                        Days
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.countdownConfig.showHours}
+                                                            onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, showHours: e.target.checked })}
+                                                        />
+                                                        Hours
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.countdownConfig.showMinutes}
+                                                            onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, showMinutes: e.target.checked })}
+                                                        />
+                                                        Minutes
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.countdownConfig.showSeconds}
+                                                            onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, showSeconds: e.target.checked })}
+                                                        />
+                                                        Seconds
+                                                    </label>
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Accent Color</Label>
+                                                    <div className="flex gap-2 mt-1">
+                                                        <input
+                                                            type="color"
+                                                            value={selectedElement.countdownConfig.accentColor}
+                                                            onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, accentColor: e.target.value })}
+                                                            className="w-8 h-8 rounded cursor-pointer border-0"
+                                                        />
+                                                        <Input
+                                                            value={selectedElement.countdownConfig.accentColor}
+                                                            onChange={(e) => handleElementChange('countdownConfig', { ...selectedElement.countdownConfig, accentColor: e.target.value })}
+                                                            className="flex-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* RSVP Form Settings */}
+                                        {selectedElement.type === 'rsvp_form' && selectedElement.rsvpFormConfig && (
+                                            <div className="border-t border-slate-700 pt-3">
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase mb-2">RSVP Form Settings</h4>
+
+                                                <div className="mb-3 space-y-2">
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.rsvpFormConfig.showNameField}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, showNameField: e.target.checked })}
+                                                        />
+                                                        Show Name Field
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.rsvpFormConfig.showEmailField}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, showEmailField: e.target.checked })}
+                                                        />
+                                                        Show Email Field
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.rsvpFormConfig.showPhoneField}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, showPhoneField: e.target.checked })}
+                                                        />
+                                                        Show Phone Field
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.rsvpFormConfig.showMessageField}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, showMessageField: e.target.checked })}
+                                                        />
+                                                        Show Message Field
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-xs text-slate-300">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.rsvpFormConfig.showAttendanceField}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, showAttendanceField: e.target.checked })}
+                                                        />
+                                                        Show Attendance Field
+                                                    </label>
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Button Color</Label>
+                                                    <div className="flex gap-2 mt-1">
+                                                        <input
+                                                            type="color"
+                                                            value={selectedElement.rsvpFormConfig.buttonColor}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, buttonColor: e.target.value })}
+                                                            className="w-8 h-8 rounded cursor-pointer border-0"
+                                                        />
+                                                        <Input
+                                                            value={selectedElement.rsvpFormConfig.buttonColor}
+                                                            onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, buttonColor: e.target.value })}
+                                                            className="flex-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Submit Button Text</Label>
+                                                    <Input
+                                                        value={selectedElement.rsvpFormConfig.submitButtonText}
+                                                        onChange={(e) => handleElementChange('rsvpFormConfig', { ...selectedElement.rsvpFormConfig, submitButtonText: e.target.value })}
+                                                        className="mt-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Guest Wishes Settings */}
+                                        {selectedElement.type === 'guest_wishes' && selectedElement.guestWishesConfig && (
+                                            <div className="border-t border-slate-700 pt-3">
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase mb-2">Guest Wishes Settings</h4>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Layout</Label>
+                                                    <select
+                                                        value={selectedElement.guestWishesConfig.layout}
+                                                        onChange={(e) => handleElementChange('guestWishesConfig', { ...selectedElement.guestWishesConfig, layout: e.target.value })}
+                                                        className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                    >
+                                                        <option value="list">List</option>
+                                                        <option value="grid">Grid</option>
+                                                        <option value="masonry">Masonry</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Max Display</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="1"
+                                                        max="100"
+                                                        value={selectedElement.guestWishesConfig.maxDisplayCount}
+                                                        onChange={(e) => handleElementChange('guestWishesConfig', { ...selectedElement.guestWishesConfig, maxDisplayCount: parseInt(e.target.value) || 20 })}
+                                                        className="mt-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                    />
+                                                </div>
+
+                                                <label className="flex items-center gap-2 text-xs text-slate-300 mb-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedElement.guestWishesConfig.showTimestamp}
+                                                        onChange={(e) => handleElementChange('guestWishesConfig', { ...selectedElement.guestWishesConfig, showTimestamp: e.target.checked })}
+                                                    />
+                                                    Show Timestamp
+                                                </label>
+
+                                                <div className="mb-3">
+                                                    <Label className="text-slate-300 text-xs">Card Background</Label>
+                                                    <div className="flex gap-2 mt-1">
+                                                        <input
+                                                            type="color"
+                                                            value={selectedElement.guestWishesConfig.cardBackgroundColor}
+                                                            onChange={(e) => handleElementChange('guestWishesConfig', { ...selectedElement.guestWishesConfig, cardBackgroundColor: e.target.value })}
+                                                            className="w-8 h-8 rounded cursor-pointer border-0"
+                                                        />
+                                                        <Input
+                                                            value={selectedElement.guestWishesConfig.cardBackgroundColor}
+                                                            onChange={(e) => handleElementChange('guestWishesConfig', { ...selectedElement.guestWishesConfig, cardBackgroundColor: e.target.value })}
+                                                            className="flex-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                 )}

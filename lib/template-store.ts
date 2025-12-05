@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Template, SectionType, SectionDesign, ThemeConfig, TemplateElement } from './types';
+import * as SupabaseService from './supabase-templates';
 
-// Mock initial templates
+// Mock initial templates (fallback)
 const defaultTheme: ThemeConfig = {
     id: 'default',
     name: 'Default Theme',
@@ -16,141 +17,131 @@ const defaultTheme: ThemeConfig = {
     fontFamily: 'Inter',
 };
 
-const demoTemplates: Template[] = [
-    {
-        id: 't1',
-        name: 'Elegant Gold',
-        thumbnail: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=400',
-        sections: {
-            opening: {
-                animation: 'fade-in',
-                overlayOpacity: 0.3,
-                elements: [
-                    {
-                        id: 'e1',
-                        type: 'text',
-                        name: 'Title',
-                        position: { x: 37, y: 80 },
-                        size: { width: 300, height: 40 },
-                        animation: 'fade-in',
-                        zIndex: 1,
-                        content: 'The Wedding of',
-                        textStyle: {
-                            fontFamily: 'Playfair Display',
-                            fontSize: 24,
-                            fontWeight: 'normal',
-                            fontStyle: 'italic',
-                            textDecoration: 'none',
-                            textAlign: 'center',
-                            color: '#b8860b',
-                        },
-                    },
-                    {
-                        id: 'e2',
-                        type: 'text',
-                        name: 'Names',
-                        position: { x: 37, y: 130 },
-                        size: { width: 300, height: 100 },
-                        animation: 'zoom-in',
-                        animationDelay: 0.3,
-                        zIndex: 2,
-                        content: 'Muhyina & Misbah',
-                        textStyle: {
-                            fontFamily: 'Dancing Script',
-                            fontSize: 42,
-                            fontWeight: 'bold',
-                            fontStyle: 'normal',
-                            textDecoration: 'none',
-                            textAlign: 'center',
-                            color: '#2c1810',
-                        },
-                    },
-                ],
-            },
-            quotes: { animation: 'slide-up', elements: [] },
-            couple: { animation: 'zoom-in', elements: [] },
-            event: { animation: 'slide-up', elements: [] },
-            maps: { animation: 'fade-in', elements: [] },
-            rsvp: { animation: 'slide-up', elements: [] },
-            thanks: { animation: 'fade-in', elements: [] },
-        },
-        globalTheme: { ...defaultTheme, name: 'Elegant Gold', id: 'elegant-gold' },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    },
-    {
-        id: 't2',
-        name: 'Rustic Garden',
-        thumbnail: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=400',
-        sections: {
-            opening: { animation: 'zoom-out', overlayOpacity: 0.2, elements: [] },
-            quotes: { animation: 'fade-in', elements: [] },
-            couple: { animation: 'slide-left', elements: [] },
-            event: { animation: 'slide-right', elements: [] },
-            maps: { animation: 'zoom-in', elements: [] },
-            rsvp: { animation: 'bounce', elements: [] },
-            thanks: { animation: 'flip-y', elements: [] },
-        },
-        globalTheme: { ...defaultTheme, name: 'Rustic Garden', id: 'rustic-garden' },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    },
-];
-
 interface TemplateStore {
     templates: Template[];
     activeTemplateId: string | null;
     selectedElementId: string | null;
+    clipboard: TemplateElement | null;
+    isLoading: boolean;
+    error: string | null;
 
     // Actions
-    addTemplate: (template: Template) => void;
-    updateTemplate: (id: string, updates: Partial<Template>) => void;
-    deleteTemplate: (id: string) => void;
+    fetchTemplates: () => Promise<void>;
+    addTemplate: (template: Omit<Template, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateTemplate: (id: string, updates: Partial<Template>) => Promise<void>;
+    deleteTemplate: (id: string) => Promise<void>;
     setActiveTemplate: (id: string | null) => void;
-    updateSectionDesign: (templateId: string, sectionType: SectionType, design: Partial<SectionDesign>) => void;
-    reorderSections: (templateId: string, newOrder: SectionType[]) => void;
 
-    // Section copy actions
-    copySectionDesign: (templateId: string, fromSection: SectionType, toSection: SectionType) => void;
-    duplicateElement: (templateId: string, fromSection: SectionType, elementId: string, toSection?: SectionType) => void;
+    // Section Actions
+    updateSectionDesign: (templateId: string, sectionType: SectionType, design: Partial<SectionDesign>) => Promise<void>;
+    reorderSections: (templateId: string, newOrder: SectionType[]) => Promise<void>;
+    copySectionDesign: (templateId: string, fromSection: SectionType, toSection: SectionType) => Promise<void>;
 
-    // Element actions
+    // Element Actions
     setSelectedElement: (elementId: string | null) => void;
-    addElement: (templateId: string, sectionType: SectionType, element: TemplateElement) => void;
-    updateElement: (templateId: string, sectionType: SectionType, elementId: string, updates: Partial<TemplateElement>) => void;
-    deleteElement: (templateId: string, sectionType: SectionType, elementId: string) => void;
-    reorderElements: (templateId: string, sectionType: SectionType, elements: TemplateElement[]) => void;
+    addElement: (templateId: string, sectionType: SectionType, element: TemplateElement) => Promise<void>;
+    updateElement: (templateId: string, sectionType: SectionType, elementId: string, updates: Partial<TemplateElement>) => Promise<void>;
+    deleteElement: (templateId: string, sectionType: SectionType, elementId: string) => Promise<void>;
+    reorderElements: (templateId: string, sectionType: SectionType, elements: TemplateElement[]) => Promise<void>;
+
+    // Layer Actions (Optimistic only for now, or batch update)
     bringForward: (templateId: string, sectionType: SectionType, elementId: string) => void;
     sendBackward: (templateId: string, sectionType: SectionType, elementId: string) => void;
     bringToFront: (templateId: string, sectionType: SectionType, elementId: string) => void;
     sendToBack: (templateId: string, sectionType: SectionType, elementId: string) => void;
+
+    // Clipboard actions
+    copyElement: (templateId: string, sectionType: SectionType, elementId: string) => void;
+    pasteElement: (templateId: string, sectionType: SectionType) => void;
+    duplicateElement: (templateId: string, fromSection: SectionType, elementId: string, toSection?: SectionType) => void;
 }
 
-export const useTemplateStore = create<TemplateStore>((set) => ({
-    templates: demoTemplates,
+export const useTemplateStore = create<TemplateStore>((set, get) => ({
+    templates: [],
     activeTemplateId: null,
     selectedElementId: null,
+    clipboard: null,
+    isLoading: false,
+    error: null,
 
-    addTemplate: (template) =>
-        set((state) => ({
-            templates: [...state.templates, template],
-        })),
+    fetchTemplates: async () => {
+        set({ isLoading: true, error: null });
+        try {
+            const templates = await SupabaseService.getTemplates();
+            set({ templates, isLoading: false });
+        } catch (error: any) {
+            console.error('Failed to fetch templates:', error);
+            set({ error: error.message, isLoading: false });
+        }
+    },
 
-    updateTemplate: (id, updates) =>
+    addTemplate: async (templateData) => {
+        // Optimistic update (temporary ID)
+        const tempId = `temp-${Date.now()}`;
+        const newTemplate: Template = {
+            ...templateData,
+            id: tempId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+
+        set((state) => ({ templates: [newTemplate, ...state.templates] }));
+
+        try {
+            const created = await SupabaseService.createTemplate(templateData);
+            if (created) {
+                set((state) => ({
+                    templates: state.templates.map(t => t.id === tempId ? created : t)
+                }));
+            }
+        } catch (error: any) {
+            console.error('Failed to create template:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+            // Revert
+            set((state) => ({ templates: state.templates.filter(t => t.id !== tempId) }));
+        }
+    },
+
+    updateTemplate: async (id, updates) => {
         set((state) => ({
             templates: state.templates.map((t) =>
                 t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
             ),
-        })),
+        }));
 
-    deleteTemplate: (id) =>
+        try {
+            await SupabaseService.updateTemplate(id, updates);
+        } catch (error) {
+            console.error('Failed to update template:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
+
+    deleteTemplate: async (id) => {
+        const previousTemplates = get().templates;
         set((state) => ({
             templates: state.templates.filter((t) => t.id !== id),
-        })),
+        }));
+
+        try {
+            await SupabaseService.deleteTemplate(id);
+        } catch (error) {
+            console.error('Failed to delete template:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+            // Revert
+            set({ templates: previousTemplates });
+        }
+    },
 
     setActiveTemplate: (id) => set({ activeTemplateId: id }),
 
-    updateSectionDesign: (templateId, sectionType, design) =>
+    updateSectionDesign: async (templateId, sectionType, design) => {
         set((state) => ({
             templates: state.templates.map((t) => {
                 if (t.id !== templateId) return t;
@@ -164,18 +155,38 @@ export const useTemplateStore = create<TemplateStore>((set) => ({
                     updatedAt: new Date().toISOString(),
                 };
             }),
-        })),
+        }));
 
-    reorderSections: (templateId, newOrder) =>
+        try {
+            await SupabaseService.updateSection(templateId, sectionType, design);
+        } catch (error) {
+            console.error('Failed to update section:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
+
+    reorderSections: async (templateId, newOrder) => {
         set((state) => ({
             templates: state.templates.map((t) =>
                 t.id === templateId ? { ...t, sectionOrder: newOrder, updatedAt: new Date().toISOString() } : t
             ),
-        })),
+        }));
+
+        try {
+            await SupabaseService.updateTemplate(templateId, { sectionOrder: newOrder });
+        } catch (error) {
+            console.error('Failed to reorder sections:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
 
     setSelectedElement: (elementId) => set({ selectedElementId: elementId }),
 
-    addElement: (templateId, sectionType, element) =>
+    addElement: async (templateId, sectionType, element) => {
         set((state) => ({
             templates: state.templates.map((t) => {
                 if (t.id !== templateId) return t;
@@ -192,9 +203,19 @@ export const useTemplateStore = create<TemplateStore>((set) => ({
                     updatedAt: new Date().toISOString(),
                 };
             }),
-        })),
+        }));
 
-    updateElement: (templateId, sectionType, elementId, updates) =>
+        try {
+            await SupabaseService.createElement(templateId, sectionType, element);
+        } catch (error) {
+            console.error('Failed to add element:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
+
+    updateElement: async (templateId, sectionType, elementId, updates) => {
         set((state) => ({
             templates: state.templates.map((t) => {
                 if (t.id !== templateId) return t;
@@ -214,9 +235,19 @@ export const useTemplateStore = create<TemplateStore>((set) => ({
                     updatedAt: new Date().toISOString(),
                 };
             }),
-        })),
+        }));
 
-    deleteElement: (templateId, sectionType, elementId) =>
+        try {
+            await SupabaseService.updateElement(elementId, updates);
+        } catch (error) {
+            console.error('Failed to update element:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
+
+    deleteElement: async (templateId, sectionType, elementId) => {
         set((state) => ({
             templates: state.templates.map((t) => {
                 if (t.id !== templateId) return t;
@@ -235,9 +266,19 @@ export const useTemplateStore = create<TemplateStore>((set) => ({
                 };
             }),
             selectedElementId: null,
-        })),
+        }));
 
-    reorderElements: (templateId, sectionType, elements) =>
+        try {
+            await SupabaseService.deleteElement(elementId);
+        } catch (error) {
+            console.error('Failed to delete element:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
+
+    reorderElements: async (templateId, sectionType, elements) => {
         set((state) => ({
             templates: state.templates.map((t) => {
                 if (t.id !== templateId) return t;
@@ -252,157 +293,156 @@ export const useTemplateStore = create<TemplateStore>((set) => ({
                     updatedAt: new Date().toISOString(),
                 };
             }),
-        })),
+        }));
 
-    bringForward: (templateId, sectionType, elementId) =>
-        set((state) => ({
-            templates: state.templates.map((t) => {
-                if (t.id !== templateId) return t;
-                const section = t.sections[sectionType];
-                if (!section) return t;
-                const maxZ = Math.max(...section.elements.map((el) => el.zIndex));
-                return {
-                    ...t,
-                    sections: {
-                        ...t.sections,
-                        [sectionType]: {
-                            ...section,
-                            elements: section.elements.map((el) =>
-                                el.id === elementId ? { ...el, zIndex: Math.min(el.zIndex + 1, maxZ + 1) } : el
-                            ),
-                        },
-                    },
-                };
-            }),
-        })),
+        // For reordering, we might need to update z-index or position of all elements
+        // This is expensive to do one by one. For now, we'll just update locally.
+        // In a real app, you'd batch update or have an 'order' field.
+        // We will update z-index for all elements to match their array index
+        try {
+            const updates = elements.map((el, index) =>
+                SupabaseService.updateElement(el.id, { zIndex: index + 1 })
+            );
+            await Promise.all(updates);
+        } catch (error) {
+            console.error('Failed to reorder elements:', error);
+            if (typeof error === 'object' && error !== null) {
+                console.error('Error details:', JSON.stringify(error, null, 2));
+            }
+        }
+    },
 
-    sendBackward: (templateId, sectionType, elementId) =>
-        set((state) => ({
-            templates: state.templates.map((t) => {
-                if (t.id !== templateId) return t;
-                const section = t.sections[sectionType];
-                if (!section) return t;
-                return {
-                    ...t,
-                    sections: {
-                        ...t.sections,
-                        [sectionType]: {
-                            ...section,
-                            elements: section.elements.map((el) =>
-                                el.id === elementId ? { ...el, zIndex: Math.max(el.zIndex - 1, 0) } : el
-                            ),
-                        },
-                    },
-                };
-            }),
-        })),
+    // Layer actions - these just update zIndex locally and then call updateElement
+    bringForward: (templateId, sectionType, elementId) => {
+        const state = get();
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const section = template.sections[sectionType];
+        if (!section) return;
 
-    bringToFront: (templateId, sectionType, elementId) =>
-        set((state) => ({
-            templates: state.templates.map((t) => {
-                if (t.id !== templateId) return t;
-                const section = t.sections[sectionType];
-                if (!section) return t;
-                const maxZ = Math.max(...section.elements.map((el) => el.zIndex));
-                return {
-                    ...t,
-                    sections: {
-                        ...t.sections,
-                        [sectionType]: {
-                            ...section,
-                            elements: section.elements.map((el) =>
-                                el.id === elementId ? { ...el, zIndex: maxZ + 1 } : el
-                            ),
-                        },
-                    },
-                };
-            }),
-        })),
+        const element = section.elements.find(el => el.id === elementId);
+        if (!element) return;
 
-    sendToBack: (templateId, sectionType, elementId) =>
-        set((state) => ({
-            templates: state.templates.map((t) => {
-                if (t.id !== templateId) return t;
-                const section = t.sections[sectionType];
-                if (!section) return t;
-                return {
-                    ...t,
-                    sections: {
-                        ...t.sections,
-                        [sectionType]: {
-                            ...section,
-                            elements: section.elements.map((el) =>
-                                el.id === elementId ? { ...el, zIndex: 0 } : el
-                            ),
-                        },
-                    },
-                };
-            }),
-        })),
+        const maxZ = Math.max(...section.elements.map((el) => el.zIndex));
+        const newZ = Math.min(element.zIndex + 1, maxZ + 1);
 
-    copySectionDesign: (templateId, fromSection, toSection) =>
-        set((state) => ({
-            templates: state.templates.map((t) => {
-                if (t.id !== templateId) return t;
-                const sourceDesign = t.sections[fromSection];
-                if (!sourceDesign) return t;
+        get().updateElement(templateId, sectionType, elementId, { zIndex: newZ });
+    },
 
-                // Deep copy elements with new IDs
-                const copiedElements = sourceDesign.elements.map((el) => ({
-                    ...el,
-                    id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                }));
+    sendBackward: (templateId, sectionType, elementId) => {
+        const state = get();
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const section = template.sections[sectionType];
+        if (!section) return;
 
-                return {
-                    ...t,
-                    sections: {
-                        ...t.sections,
-                        [toSection]: {
-                            ...sourceDesign,
-                            elements: copiedElements,
-                        },
-                    },
-                    updatedAt: new Date().toISOString(),
-                };
-            }),
-        })),
+        const element = section.elements.find(el => el.id === elementId);
+        if (!element) return;
 
-    duplicateElement: (templateId, fromSection, elementId, toSection) =>
-        set((state) => ({
-            templates: state.templates.map((t) => {
-                if (t.id !== templateId) return t;
-                const sourceSection = t.sections[fromSection];
-                if (!sourceSection) return t;
+        const newZ = Math.max(element.zIndex - 1, 0);
+        get().updateElement(templateId, sectionType, elementId, { zIndex: newZ });
+    },
 
-                const element = sourceSection.elements.find((el) => el.id === elementId);
-                if (!element) return t;
+    bringToFront: (templateId, sectionType, elementId) => {
+        const state = get();
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const section = template.sections[sectionType];
+        if (!section) return;
 
-                const targetSection = toSection || fromSection;
-                const target = t.sections[targetSection] || { animation: 'none', elements: [] };
-                const maxZ = Math.max(0, ...target.elements.map((el) => el.zIndex));
+        const maxZ = Math.max(...section.elements.map((el) => el.zIndex));
+        get().updateElement(templateId, sectionType, elementId, { zIndex: maxZ + 1 });
+    },
 
-                const duplicatedElement = {
-                    ...element,
-                    id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    name: `${element.name} (copy)`,
-                    position: {
-                        x: element.position.x + 20,
-                        y: element.position.y + 20,
-                    },
-                    zIndex: maxZ + 1,
-                };
+    sendToBack: (templateId, sectionType, elementId) => {
+        get().updateElement(templateId, sectionType, elementId, { zIndex: 0 });
+    },
 
-                return {
-                    ...t,
-                    sections: {
-                        ...t.sections,
-                        [targetSection]: {
-                            ...target,
-                            elements: [...target.elements, duplicatedElement],
-                        },
-                    },
-                    updatedAt: new Date().toISOString(),
-                };
-            }),
-        })),
+    // Copy/Paste/Duplicate - these create new elements, so they call addElement
+    copySectionDesign: async (templateId, fromSection, toSection) => {
+        const state = get();
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const sourceDesign = template.sections[fromSection];
+        if (!sourceDesign) return;
+
+        // Update section properties
+        await get().updateSectionDesign(templateId, toSection, {
+            backgroundColor: sourceDesign.backgroundColor,
+            backgroundUrl: sourceDesign.backgroundUrl,
+            overlayOpacity: sourceDesign.overlayOpacity,
+            animation: sourceDesign.animation,
+        });
+
+        // Copy elements
+        for (const el of sourceDesign.elements) {
+            const newElement = {
+                ...el,
+                id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            };
+            await get().addElement(templateId, toSection, newElement);
+        }
+    },
+
+    duplicateElement: (templateId, fromSection, elementId, toSection) => {
+        const state = get();
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const sourceSection = template.sections[fromSection];
+        if (!sourceSection) return;
+        const element = sourceSection.elements.find(el => el.id === elementId);
+        if (!element) return;
+
+        const targetSection = toSection || fromSection;
+        const target = template.sections[targetSection] || { animation: 'none', elements: [] };
+        const maxZ = Math.max(0, ...target.elements.map((el) => el.zIndex));
+
+        const duplicatedElement = {
+            ...element,
+            id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: `${element.name} (copy)`,
+            position: {
+                x: element.position.x + 20,
+                y: element.position.y + 20,
+            },
+            zIndex: maxZ + 1,
+        };
+
+        get().addElement(templateId, targetSection, duplicatedElement);
+    },
+
+    copyElement: (templateId, sectionType, elementId) => {
+        const state = get();
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const section = template.sections[sectionType];
+        if (!section) return;
+        const element = section.elements.find(el => el.id === elementId);
+        if (!element) return;
+        set({ clipboard: { ...element } });
+    },
+
+    pasteElement: (templateId, sectionType) => {
+        const state = get();
+        const clipboard = state.clipboard;
+        if (!clipboard) return;
+
+        const template = state.templates.find(t => t.id === templateId);
+        if (!template) return;
+        const section = template.sections[sectionType] || { animation: 'none', elements: [] };
+        const maxZ = Math.max(0, ...section.elements.map(el => el.zIndex));
+
+        const pastedElement: TemplateElement = {
+            ...clipboard,
+            id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: `${clipboard.name} (paste)`,
+            position: {
+                x: clipboard.position.x + 20,
+                y: clipboard.position.y + 20,
+            },
+            zIndex: maxZ + 1,
+        };
+
+        get().addElement(templateId, sectionType, pastedElement);
+    },
 }));

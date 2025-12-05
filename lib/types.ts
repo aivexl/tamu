@@ -1,4 +1,6 @@
-export type SectionType = 'opening' | 'quotes' | 'couple' | 'event' | 'maps' | 'rsvp' | 'thanks';
+// Section types - both predefined and custom
+export type PredefinedSectionType = 'opening' | 'quotes' | 'couple' | 'event' | 'maps' | 'rsvp' | 'thanks';
+export type SectionType = PredefinedSectionType | string;
 
 export interface InvitationSection {
     id: string;
@@ -186,7 +188,8 @@ export type AnimationType =
     | 'flip-y'
     | 'bounce';
 
-export type ElementType = 'image' | 'text';
+// Element types - now includes icon, countdown, rsvp_form
+export type ElementType = 'image' | 'text' | 'icon' | 'countdown' | 'rsvp_form' | 'guest_wishes';
 
 export interface TextStyle {
     fontFamily: string;
@@ -197,6 +200,68 @@ export interface TextStyle {
     textAlign: 'left' | 'center' | 'right';
     color: string;
     lineHeight?: number;
+}
+
+// Icon element properties
+export interface IconStyle {
+    iconName: string; // Lucide icon name
+    iconColor: string;
+    iconSize: number;
+}
+
+// Countdown element properties
+export type CountdownStyle = 'elegant' | 'minimal' | 'flip' | 'circle' | 'card' | 'neon';
+
+export interface CountdownConfig {
+    targetDate: string; // ISO date string
+    style: CountdownStyle;
+    showDays: boolean;
+    showHours: boolean;
+    showMinutes: boolean;
+    showSeconds: boolean;
+    backgroundColor: string;
+    textColor: string;
+    accentColor: string;
+    labelColor: string;
+    showLabels: boolean;
+    labels: {
+        days: string;
+        hours: string;
+        minutes: string;
+        seconds: string;
+    };
+}
+
+// RSVP Form element properties
+export interface RSVPFormConfig {
+    backgroundColor: string;
+    textColor: string;
+    buttonColor: string;
+    buttonTextColor: string;
+    borderColor: string;
+    showNameField: boolean;
+    showEmailField: boolean;
+    showPhoneField: boolean;
+    showMessageField: boolean;
+    showAttendanceField: boolean;
+    nameLabel: string;
+    emailLabel: string;
+    phoneLabel: string;
+    messageLabel: string;
+    attendanceLabel: string;
+    submitButtonText: string;
+    successMessage: string;
+}
+
+// Guest wishes display element
+export interface GuestWishesConfig {
+    backgroundColor: string;
+    textColor: string;
+    cardBackgroundColor: string;
+    cardBorderColor: string;
+    showTimestamp: boolean;
+    maxDisplayCount: number;
+    layout: 'list' | 'grid' | 'masonry';
 }
 
 export interface TemplateElement {
@@ -222,6 +287,14 @@ export interface TemplateElement {
     // For text elements
     content?: string;
     textStyle?: TextStyle;
+    // For icon elements
+    iconStyle?: IconStyle;
+    // For countdown elements
+    countdownConfig?: CountdownConfig;
+    // For RSVP form elements
+    rsvpFormConfig?: RSVPFormConfig;
+    // For guest wishes elements
+    guestWishesConfig?: GuestWishesConfig;
 }
 
 export interface SectionDesign {
@@ -235,13 +308,35 @@ export interface SectionDesign {
     isVisible?: boolean; // Section visibility toggle
 }
 
+// Custom section for flexible page creation
+export interface CustomSection {
+    id: string;
+    name: string; // User-defined name
+    order: number;
+}
+
 export interface Template {
     id: string;
     name: string;
     thumbnail: string;
-    sections: Partial<Record<SectionType, SectionDesign>>;
-    sectionOrder?: SectionType[]; // Order of sections for multi-page view
+    sections: Record<string, SectionDesign>; // Changed to Record<string, ...> for custom sections
+    sectionOrder?: string[]; // Order of sections (can be any string ID)
+    customSections?: CustomSection[]; // List of custom sections
     globalTheme: ThemeConfig;
+    eventDate?: string; // For countdown feature
     createdAt: string;
     updatedAt: string;
+}
+
+// RSVP Response for database
+export interface RSVPResponse {
+    id: string;
+    templateId: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    message: string;
+    attendance?: 'hadir' | 'tidak_hadir' | 'ragu';
+    isPublic: boolean;
+    createdAt: string;
 }
