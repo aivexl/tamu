@@ -25,6 +25,7 @@ create table if not exists template_sections (
   overlay_opacity numeric default 0.3,
   animation text default 'fade-in',
   page_title text,
+  open_invitation_config jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique(template_id, type)

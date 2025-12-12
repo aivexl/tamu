@@ -13,6 +13,7 @@ import { DynamicIcon, ICON_CATEGORIES, ALL_ICONS } from '@/components/icons/Icon
 import { CountdownTimer, getDefaultCountdownConfig } from '@/components/CountdownTimer';
 import { RSVPForm, getDefaultRSVPFormConfig } from '@/components/RSVPForm';
 import { GuestWishes, getDefaultGuestWishesConfig } from '@/components/GuestWishes';
+import { OpenInvitationButton, getDefaultOpenInvitationConfig } from '@/components/OpenInvitationButton';
 import {
     ArrowLeft, Save, Play, Image as ImageIcon, Type, Trash2, Upload,
     Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
@@ -21,7 +22,7 @@ import {
     AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd,
     Move, GripVertical, Copy, Eye, EyeOff, MoreHorizontal, ExternalLink,
     FlipHorizontal, FlipVertical, RotateCw, Maximize, Minimize, X,
-    Heart, Clock, MessageSquare, Users, Plus, Palette, Settings, Edit2
+    Heart, Clock, MessageSquare, Users, Plus, Palette, Settings, Edit2, MailOpen
 } from 'lucide-react';
 import { SectionSelectModal } from '@/components/dashboard/SectionSelectModal';
 import { InputModal } from '@/components/dashboard/InputModal';
@@ -355,6 +356,15 @@ export default function TemplateEditorPage() {
                     position: { x: (CANVAS_WIDTH - 340) / 2, y: 50 },
                     size: { width: 340, height: 400 },
                     guestWishesConfig: getDefaultGuestWishesConfig(),
+                } as TemplateElement;
+                break;
+            case 'open_invitation_button':
+                newElement = {
+                    ...baseElement,
+                    name: 'Open Invitation',
+                    position: { x: (CANVAS_WIDTH - 200) / 2, y: CANVAS_HEIGHT - 150 }, // Default near bottom
+                    size: { width: 200, height: 60 },
+                    openInvitationConfig: getDefaultOpenInvitationConfig(),
                 } as TemplateElement;
                 break;
             default:
@@ -807,13 +817,95 @@ export default function TemplateEditorPage() {
 
     // Preview Modal Component
     const PreviewModal = () => {
+        const [previewScale, setPreviewScale] = useState(1);
+        const [isInvitationOpen, setIsInvitationOpen] = useState(false);
+        const [isDesktopView, setIsDesktopView] = useState(false);
+        const [frameWidth, setFrameWidth] = useState(CANVAS_WIDTH);
+        const previewContentRef = useRef<HTMLDivElement>(null);
+
+        // Calculate scale for responsive preview
+        useEffect(() => {
+            const updateLayout = () => {
+                if (isPreviewMode) {
+                    const vw = window.innerWidth;
+                    const vh = window.innerHeight;
+                    const DESKTOP_BREAKPOINT = 768;
+
+                    const desktop = vw >= DESKTOP_BREAKPOINT;
+                    setIsDesktopView(desktop);
+
+                    if (desktop) {
+                        // Desktop: Use fixed phone-frame width, centered (max 420px)
+                        const width = Math.min(420, vw * 0.9);
+                        setFrameWidth(width);
+                        setPreviewScale(width / CANVAS_WIDTH);
+                    } else {
+                        // Mobile: True fullscreen
+                        setFrameWidth(vw);
+                        setPreviewScale(vw / CANVAS_WIDTH);
+                    }
+                }
+            };
+            updateLayout();
+            window.addEventListener('resize', updateLayout);
+            return () => window.removeEventListener('resize', updateLayout);
+        }, [isPreviewMode]);
+
+        const handleOpenInvitation = () => {
+            setIsInvitationOpen(true);
+            // Scroll to next section
+            setTimeout(() => {
+                const nextSection = previewContentRef.current?.querySelector('[data-section-index="1"]');
+                if (nextSection) {
+                    nextSection.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, 100);
+        };
+
+        const scaleValue = (val: number) => val * previewScale;
+
         if (!isPreviewMode) return null;
 
+        // Get Open Invitation config from first section or use default
+        const firstSectionDesign = template?.sections[orderedSections[0]];
+        const openConfig = firstSectionDesign?.openInvitationConfig || {
+            enabled: true,
+            buttonText: 'Buka Undangan',
+            subText: 'Ketuk untuk membuka',
+            buttonColor: '#722f37',
+            textColor: '#f5f0e6',
+            fontFamily: 'Cormorant Garamond, serif',
+            fontSize: 16,
+            fontWeight: 'semibold' as const,
+            letterSpacing: 0.15,
+            textTransform: 'uppercase' as const,
+            buttonStyle: 'elegant' as const,
+            buttonShape: 'pill' as const,
+            animation: 'none' as const,
+            position: 'bottom-third' as const,
+            showIcon: true,
+            iconName: 'mail-open',
+            shadowIntensity: 'medium' as const,
+        };
+
+        // Get position style for button
+        const getButtonPositionStyle = (position: string): React.CSSProperties => {
+            switch (position) {
+                case 'center':
+                    return { top: '50%', transform: 'translateY(-50%)' };
+                case 'bottom-center':
+                    return { bottom: scaleValue(40) };
+                case 'bottom-third':
+                default:
+                    return { bottom: scaleValue(80) };
+            }
+        };
+
         return (
-            <div className={`fixed inset-0 z-50 bg-black flex flex-col overflow-hidden`}>
+            <div className={`fixed inset-0 z-50 ${isDesktopView ? 'bg-stone-200' : 'bg-black'} flex items-start justify-center overflow-auto`}>
                 {/* Preview Header - Hidden when fullscreen */}
                 {!isFullscreen && (
-                    <div className="flex justify-between items-center p-4 bg-slate-900 shrink-0">
+                    <div className="fixed top-0 left-0 right-0 z-[9999] flex justify-between items-center p-4 bg-slate-900/90 backdrop-blur-sm">
                         <h2 className="text-white text-lg font-semibold">Preview Mode</h2>
                         <div className="flex gap-2">
                             <button
@@ -836,7 +928,7 @@ export default function TemplateEditorPage() {
 
                 {/* Fullscreen controls overlay */}
                 {isFullscreen && (
-                    <div className="absolute top-0 left-0 right-0 z-50 p-4 opacity-0 hover:opacity-100 transition-opacity duration-300">
+                    <div className="fixed top-0 left-0 right-0 z-[9999] p-4 opacity-0 hover:opacity-100 transition-opacity duration-300">
                         <div className="flex justify-end gap-2">
                             <button
                                 onClick={toggleNativeFullscreen}
@@ -856,37 +948,41 @@ export default function TemplateEditorPage() {
                     </div>
                 )}
 
-                {/* Preview Content - Sections at SAME size, no gaps, centered */}
+                {/* Content Frame - Phone frame on desktop, fullscreen on mobile */}
                 <div
-                    className="flex-1 overflow-y-scroll overflow-x-hidden flex flex-col items-center justify-start"
+                    ref={previewContentRef}
+                    className={`${isDesktopView ? 'mt-20 mb-8 rounded-3xl overflow-hidden shadow-2xl' : 'mt-16'}`}
                     style={{
-                        WebkitOverflowScrolling: 'touch',
-                        touchAction: 'pan-y',
-                        height: isFullscreen ? '100vh' : 'auto',
+                        width: frameWidth,
+                        maxWidth: isDesktopView ? 420 : '100%',
+                        boxShadow: isDesktopView ? '0 25px 80px -12px rgba(0, 0, 0, 0.4), 0 10px 30px -10px rgba(0, 0, 0, 0.3)' : 'none',
+                        overflowY: isInvitationOpen ? 'auto' : 'hidden',
                     }}
                 >
-                    {orderedSections.map((sectionType) => {
-                        const sectionDesign = template.sections[sectionType] || { animation: 'none' as const, elements: [] };
+                    {orderedSections.map((sectionType, index) => {
+                        const sectionDesign = template?.sections[sectionType] || { animation: 'none' as const, elements: [] };
                         const sectionElements = sectionDesign.elements || [];
                         const sortedSectionElements = [...sectionElements].sort((a, b) => a.zIndex - b.zIndex);
                         const isVisible = sectionDesign.isVisible !== false;
-                        const isSectionVisibleInViewport = visibleSections.has(sectionType);
 
                         if (!isVisible) return null;
+
+                        const isCover = index === 0;
+                        const shouldHide = !isInvitationOpen && !isCover;
 
                         return (
                             <div
                                 key={sectionType}
-                                data-section-id={sectionType}
-                                className="relative shrink-0"
+                                data-section-index={index}
+                                className="relative w-full"
                                 style={{
-                                    width: CANVAS_WIDTH,
-                                    height: CANVAS_HEIGHT,
+                                    minHeight: scaleValue(CANVAS_HEIGHT),
+                                    display: shouldHide ? 'none' : 'block',
                                 }}
                             >
                                 {/* Canvas Background */}
                                 <div
-                                    className="absolute inset-0 overflow-hidden"
+                                    className="absolute inset-0"
                                     style={{
                                         backgroundColor: sectionDesign.backgroundColor || '#ffffff',
                                         backgroundImage: sectionDesign.backgroundUrl ? `url(${sectionDesign.backgroundUrl})` : undefined,
@@ -898,111 +994,136 @@ export default function TemplateEditorPage() {
                                     {sectionDesign.overlayOpacity && sectionDesign.overlayOpacity > 0 && (
                                         <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${sectionDesign.overlayOpacity})` }} />
                                     )}
+                                </div>
 
-                                    {/* Elements with scroll-triggered animations */}
-                                    {sortedSectionElements.map((el) => (
-                                        <AnimatedElement
-                                            key={el.id}
-                                            animation={el.animation}
-                                            loopAnimation={el.loopAnimation}
-                                            delay={el.animationDelay || 0}
-                                            duration={el.animationDuration || 800}
-                                            className="absolute"
+                                {/* Elements with scroll-triggered animations - Scaled */}
+                                {sortedSectionElements.map((el) => (
+                                    <AnimatedElement
+                                        key={el.id}
+                                        animation={el.animation}
+                                        loopAnimation={el.loopAnimation}
+                                        delay={el.animationDelay || 0}
+                                        duration={el.animationDuration || 800}
+                                        className="absolute"
+                                        style={{
+                                            left: scaleValue(el.position.x),
+                                            top: scaleValue(el.position.y),
+                                            width: scaleValue(el.size.width),
+                                            height: scaleValue(el.size.height),
+                                            zIndex: el.zIndex,
+                                        }}
+                                    >
+                                        {/* Inner wrapper for user transforms (flip/rotation) */}
+                                        <div
+                                            className="w-full h-full"
+                                            style={{ transform: getElementTransform(el) }}
+                                        >
+                                            {el.type === 'image' && el.imageUrl && (
+                                                <NextImage
+                                                    src={el.imageUrl}
+                                                    alt={el.name}
+                                                    fill
+                                                    className="object-cover"
+                                                    unoptimized
+                                                />
+                                            )}
+                                            {el.type === 'text' && el.textStyle && (
+                                                <div
+                                                    className="w-full h-full flex items-center"
+                                                    style={{
+                                                        fontFamily: el.textStyle.fontFamily,
+                                                        fontSize: scaleValue(el.textStyle.fontSize),
+                                                        fontWeight: el.textStyle.fontWeight,
+                                                        fontStyle: el.textStyle.fontStyle,
+                                                        textDecoration: el.textStyle.textDecoration,
+                                                        textAlign: el.textStyle.textAlign,
+                                                        color: el.textStyle.color,
+                                                        justifyContent: el.textStyle.textAlign === 'center' ? 'center' : el.textStyle.textAlign === 'right' ? 'flex-end' : 'flex-start',
+                                                        whiteSpace: 'pre-wrap',
+                                                        lineHeight: 1.2,
+                                                    }}
+                                                >
+                                                    {el.content}
+                                                </div>
+                                            )}
+                                            {el.type === 'icon' && (
+                                                <div className="w-full h-full flex items-center justify-center">
+                                                    {el.iconStyle ? (
+                                                        <DynamicIcon
+                                                            name={el.iconStyle.iconName}
+                                                            size={scaleValue(el.iconStyle.iconSize)}
+                                                            color={el.iconStyle.iconColor}
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300 rounded">
+                                                            <span className="text-[10px] text-slate-400">Icon</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {el.type === 'countdown' && (
+                                                <div className="w-full h-full flex items-center justify-center">
+                                                    <div style={{ width: '100%' }}>
+                                                        {el.countdownConfig ? (
+                                                            <CountdownTimer config={el.countdownConfig} />
+                                                        ) : (
+                                                            <div className="w-full h-12 flex items-center justify-center bg-slate-100 border border-dashed border-slate-300 rounded">
+                                                                <span className="text-xs text-slate-400">Timer Element</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {el.type === 'rsvp_form' && (
+                                                <div className="w-full h-full overflow-y-auto">
+                                                    {el.rsvpFormConfig ? (
+                                                        <RSVPForm config={el.rsvpFormConfig} templateId={templateId} />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300">
+                                                            <span className="text-xs text-slate-400">RSVP Form</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {el.type === 'guest_wishes' && (
+                                                <div className="w-full h-full overflow-y-auto">
+                                                    {el.guestWishesConfig ? (
+                                                        <GuestWishes config={el.guestWishesConfig} wishes={[]} />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300">
+                                                            <span className="text-xs text-slate-400">Guest Wishes</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </AnimatedElement>
+                                ))}
+
+                                {/* Open Invitation Button - Only on Cover (First Section) */}
+                                {isCover && !isInvitationOpen && openConfig.enabled && (
+                                    <div
+                                        className="absolute left-0 right-0 flex justify-center z-50"
+                                        style={getButtonPositionStyle(openConfig.position || 'bottom-third')}
+                                    >
+                                        <button
+                                            onClick={handleOpenInvitation}
+                                            className="px-8 py-3 transition-all duration-300 transform hover:scale-105 active:scale-95 flex items-center gap-2 shadow-lg"
                                             style={{
-                                                left: el.position.x,
-                                                top: el.position.y,
-                                                width: el.size.width,
-                                                height: el.size.height,
-                                                zIndex: el.zIndex,
+                                                backgroundColor: openConfig.buttonColor,
+                                                color: openConfig.textColor,
+                                                fontFamily: openConfig.fontFamily,
+                                                fontSize: scaleValue(openConfig.fontSize),
+                                                fontWeight: openConfig.fontWeight === 'bold' ? 700 : openConfig.fontWeight === 'semibold' ? 600 : 500,
+                                                letterSpacing: openConfig.letterSpacing ? `${openConfig.letterSpacing}em` : '0.1em',
+                                                textTransform: openConfig.textTransform || 'uppercase',
+                                                borderRadius: openConfig.buttonShape === 'pill' ? '9999px' : openConfig.buttonShape === 'rounded' ? '12px' : '4px',
                                             }}
                                         >
-                                            {/* Inner wrapper for user transforms (flip/rotation) */}
-                                            <div
-                                                className="w-full h-full"
-                                                style={{ transform: getElementTransform(el) }}
-                                            >
-                                                {el.type === 'image' && el.imageUrl && (
-                                                    <NextImage
-                                                        src={el.imageUrl}
-                                                        alt={el.name}
-                                                        fill
-                                                        className="object-cover"
-                                                        unoptimized
-                                                    />
-                                                )}
-                                                {el.type === 'text' && el.textStyle && (
-                                                    <div
-                                                        className="w-full h-full flex items-center"
-                                                        style={{
-                                                            fontFamily: el.textStyle.fontFamily,
-                                                            fontSize: el.textStyle.fontSize,
-                                                            fontWeight: el.textStyle.fontWeight,
-                                                            fontStyle: el.textStyle.fontStyle,
-                                                            textDecoration: el.textStyle.textDecoration,
-                                                            textAlign: el.textStyle.textAlign,
-                                                            color: el.textStyle.color,
-                                                            justifyContent: el.textStyle.textAlign === 'center' ? 'center' : el.textStyle.textAlign === 'right' ? 'flex-end' : 'flex-start',
-                                                            whiteSpace: 'pre-wrap',
-                                                            lineHeight: 1.2,
-                                                        }}
-                                                    >
-                                                        {el.content}
-                                                    </div>
-                                                )}
-                                                {el.type === 'icon' && (
-                                                    <div className="w-full h-full flex items-center justify-center">
-                                                        {el.iconStyle ? (
-                                                            <DynamicIcon
-                                                                name={el.iconStyle.iconName}
-                                                                size={el.iconStyle.iconSize}
-                                                                color={el.iconStyle.iconColor}
-                                                            />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300 rounded">
-                                                                <span className="text-[10px] text-slate-400">Icon</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {el.type === 'countdown' && (
-                                                    <div className="w-full h-full flex items-center justify-center">
-                                                        <div style={{ width: '100%' }}>
-                                                            {el.countdownConfig ? (
-                                                                <CountdownTimer config={el.countdownConfig} />
-                                                            ) : (
-                                                                <div className="w-full h-12 flex items-center justify-center bg-slate-100 border border-dashed border-slate-300 rounded">
-                                                                    <span className="text-xs text-slate-400">Timer Element</span>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {el.type === 'rsvp_form' && (
-                                                    <div className="w-full h-full overflow-y-auto">
-                                                        {el.rsvpFormConfig ? (
-                                                            <RSVPForm config={el.rsvpFormConfig} templateId={templateId} />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300">
-                                                                <span className="text-xs text-slate-400">RSVP Form</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {el.type === 'guest_wishes' && (
-                                                    <div className="w-full h-full overflow-y-auto">
-                                                        {el.guestWishesConfig ? (
-                                                            <GuestWishes config={el.guestWishesConfig} wishes={[]} />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300">
-                                                                <span className="text-xs text-slate-400">Guest Wishes</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </AnimatedElement>
-                                    ))}
-                                </div>
+                                            <span>{openConfig.buttonText}</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
@@ -1024,6 +1145,13 @@ export default function TemplateEditorPage() {
                         50% { opacity: 1; transform: translateY(10px); }
                         70% { transform: translateY(-5px); }
                         100% { opacity: 1; transform: translateY(0); }
+                    }
+                    @keyframes float {
+                        0%, 100% { transform: translateY(0); }
+                        50% { transform: translateY(-10px); }
+                    }
+                    .animate-float {
+                        animation: float 3s ease-in-out infinite;
                     }
                 `}</style>
             </div>
@@ -1322,6 +1450,9 @@ export default function TemplateEditorPage() {
                                             </Button>
                                             <Button size="sm" variant="outline" onClick={() => handleAddElement('guest_wishes')} className="text-slate-300 border-slate-600 text-xs py-2">
                                                 <Users size={14} className="mr-1" /> Wishes
+                                            </Button>
+                                            <Button size="sm" variant="outline" onClick={() => handleAddElement('open_invitation_button')} className="text-slate-300 border-slate-600 text-xs py-2">
+                                                <MailOpen size={14} className="mr-1" /> Open Inv.
                                             </Button>
                                         </div>
                                     </div>
@@ -1920,6 +2051,162 @@ export default function TemplateEditorPage() {
                                                     </div>
                                                 </div>
                                             )}
+
+                                            {/* Open Invitation Settings */}
+                                            {selectedElement.type === 'open_invitation_button' && selectedElement.openInvitationConfig && (
+                                                <div className="border-t border-slate-700 pt-3">
+                                                    <h4 className="text-xs font-semibold text-slate-400 uppercase mb-2">Open Invitation Settings</h4>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Button Text</Label>
+                                                        <Input
+                                                            value={selectedElement.openInvitationConfig.buttonText}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, buttonText: e.target.value })}
+                                                            className="mt-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                        />
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Sub Text</Label>
+                                                        <Input
+                                                            value={selectedElement.openInvitationConfig.subText || ''}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, subText: e.target.value })}
+                                                            className="mt-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                            placeholder="Optional subtitle"
+                                                        />
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Style</Label>
+                                                        <select
+                                                            value={selectedElement.openInvitationConfig.buttonStyle}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, buttonStyle: e.target.value })}
+                                                            className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                        >
+                                                            <option value="elegant">Elegant</option>
+                                                            <option value="minimal">Minimal</option>
+                                                            <option value="glass">Glass</option>
+                                                            <option value="outline">Outline</option>
+                                                            <option value="neon">Neon</option>
+                                                            <option value="gradient">Gradient</option>
+                                                            <option value="luxury">Luxury</option>
+                                                            <option value="romantic">Romantic</option>
+                                                            <option value="boho">Boho</option>
+                                                            <option value="modern">Modern</option>
+                                                            <option value="vintage">Vintage</option>
+                                                            <option value="playful">Playful</option>
+                                                            <option value="rustic">Rustic</option>
+                                                            <option value="cloud">Cloud</option>
+                                                            <option value="sticker">Sticker</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Shape</Label>
+                                                        <select
+                                                            value={selectedElement.openInvitationConfig.buttonShape}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, buttonShape: e.target.value })}
+                                                            className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                        >
+                                                            <option value="pill">Pill</option>
+                                                            <option value="rounded">Rounded</option>
+                                                            <option value="rectangle">Rectangle</option>
+                                                            <option value="stadium">Stadium</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Font Family</Label>
+                                                        <select
+                                                            value={selectedElement.openInvitationConfig.fontFamily}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, fontFamily: e.target.value })}
+                                                            className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                        >
+                                                            {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Font Size</Label>
+                                                        <select
+                                                            value={selectedElement.openInvitationConfig.fontSize}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, fontSize: parseInt(e.target.value) })}
+                                                            className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                        >
+                                                            {FONT_SIZES.map((s) => <option key={s} value={s}>{s}px</option>)}
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Button Color</Label>
+                                                        <div className="flex gap-2 mt-1">
+                                                            <input
+                                                                type="color"
+                                                                value={selectedElement.openInvitationConfig.buttonColor}
+                                                                onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, buttonColor: e.target.value })}
+                                                                className="w-8 h-8 rounded cursor-pointer border-0"
+                                                            />
+                                                            <Input
+                                                                value={selectedElement.openInvitationConfig.buttonColor}
+                                                                onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, buttonColor: e.target.value })}
+                                                                className="flex-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <Label className="text-slate-300 text-xs">Text Color</Label>
+                                                        <div className="flex gap-2 mt-1">
+                                                            <input
+                                                                type="color"
+                                                                value={selectedElement.openInvitationConfig.textColor}
+                                                                onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, textColor: e.target.value })}
+                                                                className="w-8 h-8 rounded cursor-pointer border-0"
+                                                            />
+                                                            <Input
+                                                                value={selectedElement.openInvitationConfig.textColor}
+                                                                onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, textColor: e.target.value })}
+                                                                className="flex-1 bg-slate-700 border-slate-600 text-white text-sm h-8"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mb-3 flex items-center justify-between">
+                                                        <Label className="text-slate-300 text-xs">Show Icon</Label>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedElement.openInvitationConfig.showIcon}
+                                                            onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, showIcon: e.target.checked })}
+                                                            className="w-4 h-4 rounded"
+                                                        />
+                                                    </div>
+
+                                                    {selectedElement.openInvitationConfig.showIcon && (
+                                                        <div className="mb-3">
+                                                            <Label className="text-slate-300 text-xs">Icon Name</Label>
+                                                            <select
+                                                                value={selectedElement.openInvitationConfig.iconName || 'mail-open'}
+                                                                onChange={(e) => handleElementChange('openInvitationConfig', { ...selectedElement.openInvitationConfig, iconName: e.target.value })}
+                                                                className="w-full mt-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm h-8"
+                                                            >
+                                                                <option value="mail-open">Mail Open</option>
+                                                                <option value="heart">Heart</option>
+                                                                <option value="sparkles">Sparkles</option>
+                                                                <option value="mail">Mail</option>
+                                                                <option value="send">Send</option>
+                                                                <option value="star">Star</option>
+                                                                <option value="coffee">Coffee</option>
+                                                                <option value="cloud">Cloud</option>
+                                                                <option value="gift">Gift</option>
+                                                                <option value="anchor">Anchor</option>
+                                                                <option value="feather">Feather</option>
+                                                                <option value="smile">Smile</option>
+                                                                <option value="zap">Zap</option>
+                                                            </select>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -2180,6 +2467,21 @@ export default function TemplateEditorPage() {
                                                             ) : (
                                                                 <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300 opacity-50">
                                                                     <span className="text-xs text-slate-400">Guest Wishes</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {el.type === 'open_invitation_button' && (
+                                                        <div className="w-full h-full flex items-center justify-center pointer-events-none">
+                                                            {el.openInvitationConfig ? (
+                                                                <OpenInvitationButton
+                                                                    config={el.openInvitationConfig}
+                                                                    onClick={() => { }}
+                                                                    scale={1} // Editor uses 1:1 scale mostly, or could derive
+                                                                />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center bg-slate-100 border border-dashed border-slate-300 opacity-50">
+                                                                    <span className="text-xs text-slate-400">Open Button</span>
                                                                 </div>
                                                             )}
                                                         </div>

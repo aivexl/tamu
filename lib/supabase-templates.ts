@@ -94,6 +94,7 @@ export async function getTemplate(id: string): Promise<Template | null> {
                 overlayOpacity: section.overlay_opacity,
                 animation: section.animation,
                 pageTitle: section.page_title,
+                openInvitationConfig: section.open_invitation_config,
                 elements: elementsData.map((el: any) => ({
                     id: el.id,
                     type: el.type as ElementType,
@@ -239,6 +240,7 @@ export async function updateSection(templateId: string, sectionType: string, upd
                 overlay_opacity: updates.overlayOpacity,
                 animation: updates.animation,
                 page_title: updates.pageTitle,
+                open_invitation_config: updates.openInvitationConfig,
                 updated_at: new Date().toISOString(),
             })
             .eq('id', existingSection.id);
@@ -256,6 +258,7 @@ export async function updateSection(templateId: string, sectionType: string, upd
                 overlay_opacity: updates.overlayOpacity,
                 animation: updates.animation,
                 page_title: updates.pageTitle,
+                open_invitation_config: updates.openInvitationConfig,
             });
         if (error) throw error;
     }

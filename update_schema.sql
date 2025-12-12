@@ -22,3 +22,10 @@ ADD COLUMN IF NOT EXISTS loop_animation text;
 
 -- Comment on loop_animation column
 COMMENT ON COLUMN template_elements.loop_animation IS 'Continuous looping animation type (sway, float, pulse, etc.)';
+
+-- Add open_invitation_config to template_sections table
+ALTER TABLE template_sections 
+ADD COLUMN IF NOT EXISTS open_invitation_config jsonb;
+
+-- Comment on column
+COMMENT ON COLUMN template_sections.open_invitation_config IS 'Configuration for Open Invitation gate button and style';

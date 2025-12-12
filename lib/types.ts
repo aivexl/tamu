@@ -200,8 +200,8 @@ export type AnimationType =
     | 'heartbeat'     // Love heartbeat effect
     | 'glow';         // Soft glowing aura
 
-// Element types - now includes icon, countdown, rsvp_form
-export type ElementType = 'image' | 'text' | 'icon' | 'countdown' | 'rsvp_form' | 'guest_wishes';
+// Element types - now includes icon, countdown, rsvp_form, guest_wishes, open_invitation_button
+export type ElementType = 'image' | 'text' | 'icon' | 'countdown' | 'rsvp_form' | 'guest_wishes' | 'open_invitation_button';
 
 export interface TextStyle {
     fontFamily: string;
@@ -213,6 +213,7 @@ export interface TextStyle {
     color: string;
     lineHeight?: number;
 }
+
 
 // Icon element properties
 export interface IconStyle {
@@ -311,6 +312,8 @@ export interface TemplateElement {
     rsvpFormConfig?: RSVPFormConfig;
     // For guest wishes elements
     guestWishesConfig?: GuestWishesConfig;
+    // For open invitation button element
+    openInvitationConfig?: OpenInvitationConfig;
 }
 
 export interface SectionDesign {
@@ -322,6 +325,40 @@ export interface SectionDesign {
     elements: TemplateElement[];
     pageTitle?: string; // Custom title for multi-page view
     isVisible?: boolean; // Section visibility toggle
+    openInvitationConfig?: OpenInvitationConfig;
+}
+
+export interface OpenInvitationConfig {
+    enabled: boolean;
+    // Text Content
+    buttonText: string;
+    subText?: string; // Optional subtitle like "Tap to open"
+    // Colors
+    buttonColor: string; // Background/accent color
+    textColor: string;
+    borderColor?: string;
+    shadowColor?: string;
+    gradientEndColor?: string; // For gradient style
+    // Typography
+    fontFamily: string;
+    fontSize: number;
+    fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold';
+    letterSpacing?: number; // In em units (e.g., 0.1 = 10% letter spacing)
+    textTransform?: 'none' | 'uppercase' | 'capitalize';
+    // Style Options
+    buttonStyle: 'elegant' | 'minimal' | 'glass' | 'outline' | 'neon' | 'gradient' | 'luxury' | 'romantic' | 'boho' | 'modern' | 'vintage' | 'playful' | 'rustic' | 'cloud' | 'sticker';
+    buttonShape: 'pill' | 'rounded' | 'rectangle' | 'stadium';
+    // Animation
+    animation?: 'pulse' | 'bounce' | 'glow' | 'shimmer' | 'float' | 'none';
+    // Layout
+    position: 'bottom-center' | 'center' | 'bottom-third';
+    showIcon: boolean;
+    iconName?: string; // lucide icon name
+    // Advanced Appearance
+    overlayOpacity?: number; // Background overlay strength (0-1)
+    backdropBlur?: number; // Blur intensity in pixels
+    borderWidth?: number; // Border thickness
+    shadowIntensity?: 'none' | 'soft' | 'medium' | 'strong';
 }
 
 // Custom section for flexible page creation
